@@ -5,9 +5,10 @@ Handles recursive crawling of websites by following internal links.
 """
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
-from urllib.parse import urldefrag
+from urllib.parse import urldefrag, urljoin, urlparse
 
 from crawl4ai import CacheMode, CrawlerRunConfig, MemoryAdaptiveDispatcher
 
@@ -16,6 +17,42 @@ from ...credential_service import credential_service
 from ..helpers.url_handler import URLHandler
 
 logger = get_logger(__name__)
+
+# URL patterns to exclude from crawling (non-documentation content)
+EXCLUDE_URL_PATTERNS = [
+    # Company/corporate pages
+    r'/careers/?', r'/jobs/?', r'/hiring/?', r'/join-us/?',
+    r'/about(-us)?/?$', r'/team/?', r'/company/?', r'/leadership/?',
+    # Commercial pages
+    r'/pricing/?', r'/plans/?', r'/enterprise/?$', r'/demo/?', r'/trial/?',
+    r'/contact/?', r'/sales/?', r'/request-demo/?',
+    # Authentication pages
+    r'/signup/?', r'/sign-up/?', r'/login/?', r'/sign-in/?', r'/register/?',
+    r'/dashboard/?', r'/account/?', r'/settings/?$',
+    # Legal pages
+    r'/legal/?', r'/privacy/?', r'/terms/?', r'/cookie/?', r'/gdpr/?',
+    r'/tos/?', r'/eula/?', r'/compliance/?',
+    # Blog and news (usually not documentation)
+    r'/blog/?', r'/news/?', r'/press/?', r'/media/?', r'/announcements/?',
+    # Community/forum (separate from docs)
+    r'/forum/?', r'/community/?$', r'/discuss/?', r'/support/tickets/?',
+    # Status and operational pages
+    r'/status/?$', r'/uptime/?', r'/incidents/?',
+    # Marketing tracking parameters
+    r'\?.*utm_',
+    # Social media paths
+    r'/share/?', r'/tweet/?', r'/social/?',
+    # App/product pages (not docs)
+    r'/app/?$', r'/product/?$', r'/features/?$',
+    # Misc non-doc pages
+    r'/subscribe/?', r'/newsletter/?', r'/webinar/?', r'/events/?',
+]
+
+# HTML tags to exclude from crawled content (boilerplate)
+EXCLUDED_TAGS = ['nav', 'footer', 'header', 'aside', 'form', 'script', 'style', 'noscript']
+
+# Minimum word count per content block
+WORD_COUNT_THRESHOLD = 15
 
 
 class RecursiveCrawlStrategy:
@@ -32,6 +69,52 @@ class RecursiveCrawlStrategy:
         self.crawler = crawler
         self.markdown_generator = markdown_generator
         self.url_handler = URLHandler()
+        # Compile exclusion patterns once for performance
+        self._exclude_patterns = [re.compile(p, re.IGNORECASE) for p in EXCLUDE_URL_PATTERNS]
+
+    def _should_exclude_url(self, url: str) -> bool:
+        """
+        Check if a URL matches any exclusion pattern.
+
+        Args:
+            url: URL to check
+
+        Returns:
+            True if URL should be excluded, False otherwise
+        """
+        for pattern in self._exclude_patterns:
+            if pattern.search(url):
+                logger.debug(f"Excluding URL by pattern: {url}")
+                return True
+        return False
+
+    def _normalize_netloc(self, url: str) -> str | None:
+        try:
+            parsed = urlparse(url)
+            netloc = parsed.netloc.lower().rstrip(".")
+            if not netloc:
+                return None
+            if parsed.scheme == "http" and netloc.endswith(":80"):
+                return netloc[:-3]
+            if parsed.scheme == "https" and netloc.endswith(":443"):
+                return netloc[:-4]
+            return netloc
+        except Exception:
+            return None
+
+    def _build_allowed_domains(self, start_urls: list[str]) -> set[str]:
+        allowed = set()
+        for url in start_urls:
+            netloc = self._normalize_netloc(url)
+            if netloc:
+                allowed.add(netloc)
+        return allowed
+
+    def _is_allowed_domain(self, url: str, allowed_domains: set[str]) -> bool:
+        if not allowed_domains:
+            return True
+        netloc = self._normalize_netloc(url)
+        return bool(netloc) and netloc in allowed_domains
 
     async def crawl_recursive_with_progress(
         self,
@@ -42,6 +125,9 @@ class RecursiveCrawlStrategy:
         max_concurrent: int | None = None,
         progress_callback: Callable[..., Awaitable[None]] | None = None,
         cancellation_check: Callable[[], None] | None = None,
+        exclude_url_patterns: list[str] | None = None,
+        strict_domain: bool = True,
+        excluded_tags: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Recursively crawl internal links from start URLs up to a maximum depth with progress reporting.
@@ -54,6 +140,9 @@ class RecursiveCrawlStrategy:
             max_concurrent: Maximum concurrent crawls
             progress_callback: Optional callback for progress updates
             cancellation_check: Optional function to check for cancellation
+            exclude_url_patterns: Additional URL patterns to exclude (merged with defaults)
+            strict_domain: Whether to restrict crawling to exact domain (default: True)
+            excluded_tags: Additional HTML tags to exclude from content (merged with defaults)
 
         Returns:
             List of crawl results
@@ -63,6 +152,24 @@ class RecursiveCrawlStrategy:
             if progress_callback:
                 await progress_callback("error", 0, "Crawler not available")
             return []
+
+        # Merge user-provided exclude patterns with defaults
+        all_exclude_patterns = list(EXCLUDE_URL_PATTERNS)
+        if exclude_url_patterns:
+            all_exclude_patterns.extend(exclude_url_patterns)
+            logger.info(f"Added {len(exclude_url_patterns)} custom URL exclusion patterns")
+
+        # Compile all exclusion patterns for this crawl
+        compiled_exclude_patterns = [re.compile(p, re.IGNORECASE) for p in all_exclude_patterns]
+
+        # Merge user-provided excluded tags with defaults
+        all_excluded_tags = list(EXCLUDED_TAGS)
+        if excluded_tags:
+            # Add only unique tags
+            for tag in excluded_tags:
+                if tag.lower() not in [t.lower() for t in all_excluded_tags]:
+                    all_excluded_tags.append(tag)
+            logger.info(f"Using {len(all_excluded_tags)} total excluded HTML tags")
 
         # Load settings from database - fail fast on configuration errors
         try:
@@ -107,6 +214,15 @@ class RecursiveCrawlStrategy:
         # Check if start URLs include documentation sites
         has_doc_sites = any(is_documentation_site_func(url) for url in start_urls)
 
+        # Extract allowed domains for strict domain filtering (only if enabled)
+        allowed_domains: set[str] = set()
+        if strict_domain:
+            allowed_domains = self._build_allowed_domains(start_urls)
+            if allowed_domains:
+                logger.info(f"Using strict domain filtering for: {', '.join(sorted(allowed_domains))}")
+        else:
+            logger.info("Strict domain filtering disabled - will follow links to subdomains")
+
         if has_doc_sites:
             logger.info(
                 "Detected documentation sites for recursive crawl, using enhanced configuration"
@@ -123,6 +239,10 @@ class RecursiveCrawlStrategy:
                 exclude_all_images=False,
                 remove_overlay_elements=True,
                 process_iframes=True,
+                # Content filtering to remove boilerplate (uses merged tags)
+                excluded_tags=all_excluded_tags,
+                word_count_threshold=WORD_COUNT_THRESHOLD,
+                exclude_external_links=True,
             )
         else:
             # Configuration for regular recursive crawling
@@ -134,6 +254,9 @@ class RecursiveCrawlStrategy:
                 page_timeout=int(settings.get("CRAWL_PAGE_TIMEOUT", "45000")),
                 delay_before_return_html=float(settings.get("CRAWL_DELAY_BEFORE_HTML", "0.5")),
                 scan_full_page=True,
+                # Content filtering to remove boilerplate (uses merged tags)
+                excluded_tags=all_excluded_tags,
+                word_count_threshold=WORD_COUNT_THRESHOLD,
             )
 
         dispatcher = MemoryAdaptiveDispatcher(
@@ -159,6 +282,14 @@ class RecursiveCrawlStrategy:
 
         def normalize_url(url):
             return urldefrag(url)[0]
+
+        def should_exclude_url(url: str) -> bool:
+            """Check if URL matches any exclusion pattern (uses merged patterns)."""
+            for pattern in compiled_exclude_patterns:
+                if pattern.search(url):
+                    logger.debug(f"Excluding URL by pattern: {url}")
+                    return True
+            return False
 
         current_urls = {normalize_url(u) for u in start_urls}
         results_all = []
@@ -280,7 +411,6 @@ class RecursiveCrawlStrategy:
                         # Extract title from HTML <title> tag
                         title = "Untitled"
                         if result.html:
-                            import re
                             title_match = re.search(r'<title[^>]*>(.*?)</title>', result.html, re.IGNORECASE | re.DOTALL)
                             if title_match:
                                 extracted_title = title_match.group(1).strip()
@@ -297,18 +427,42 @@ class RecursiveCrawlStrategy:
                         })
                         depth_successful += 1
 
-                        # Find internal links for next depth
+                        # Find internal links for next depth with filtering
                         links = getattr(result, "links", {}) or {}
+                        filtered_count = 0
                         for link in links.get("internal", []):
-                            next_url = normalize_url(link["href"])
-                            # Skip binary files and already visited URLs
-                            is_binary = self.url_handler.is_binary_file(next_url)
-                            if next_url not in visited and not is_binary:
-                                if next_url not in next_level_urls:
-                                    next_level_urls.add(next_url)
-                                    total_discovered += 1  # Increment when we discover a new URL
-                            elif is_binary:
+                            href = link.get("href")
+                            if not href:
+                                continue
+                            next_url = normalize_url(urljoin(original_url, href))
+
+                            # Skip binary files
+                            if self.url_handler.is_binary_file(next_url):
                                 logger.debug(f"Skipping binary file from crawl queue: {next_url}")
+                                continue
+
+                            # Skip already visited URLs
+                            if next_url in visited:
+                                continue
+
+                            # Apply strict domain filtering (prevents subdomain crawling)
+                            if allowed_domains and not self._is_allowed_domain(next_url, allowed_domains):
+                                logger.debug(f"Skipping URL outside base domain: {next_url}")
+                                filtered_count += 1
+                                continue
+
+                            # Apply URL exclusion patterns (non-documentation content)
+                            if should_exclude_url(next_url):
+                                filtered_count += 1
+                                continue
+
+                            # URL passed all filters, add to next level
+                            if next_url not in next_level_urls:
+                                next_level_urls.add(next_url)
+                                total_discovered += 1  # Increment when we discover a new URL
+
+                        if filtered_count > 0:
+                            logger.info(f"Filtered {filtered_count} URLs from page {original_url}")
                     else:
                         logger.warning(
                             f"Failed to crawl {original_url}: {getattr(result, 'error_message', 'Unknown error')}"

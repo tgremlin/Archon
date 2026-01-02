@@ -123,3 +123,20 @@ class TestURLHandler:
         # Should not transform non-GitHub URLs
         other = "https://example.com/file"
         assert handler.transform_github_url(other) == other
+
+    def test_extract_display_name_docs_path_segments(self):
+        """Test docs.* domain display names include meaningful path segments."""
+        handler = URLHandler()
+
+        assert (
+            handler.extract_display_name("https://docs.example.com/en/api-reference/")
+            == "Example - Api Reference"
+        )
+        assert (
+            handler.extract_display_name("https://docs.example.com/guides/getting-started/")
+            == "Example - Guides"
+        )
+        assert (
+            handler.extract_display_name("https://docs.example.com/en/v1/")
+            == "Example Documentation"
+        )

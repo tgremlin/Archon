@@ -15,6 +15,12 @@ from ...credential_service import credential_service
 
 logger = get_logger(__name__)
 
+# HTML tags to exclude from crawled content (boilerplate)
+EXCLUDED_TAGS = ['nav', 'footer', 'header', 'aside', 'form', 'script', 'style', 'noscript']
+
+# Minimum word count per content block
+WORD_COUNT_THRESHOLD = 15
+
 
 class BatchCrawlStrategy:
     """Strategy for crawling multiple URLs in batch."""
@@ -119,6 +125,10 @@ class BatchCrawlStrategy:
                 exclude_all_images=False,
                 remove_overlay_elements=True,
                 process_iframes=True,
+                # Content filtering to remove boilerplate
+                excluded_tags=EXCLUDED_TAGS,
+                word_count_threshold=WORD_COUNT_THRESHOLD,
+                exclude_external_links=True,
             )
         else:
             # Configuration for regular batch crawling
@@ -130,6 +140,9 @@ class BatchCrawlStrategy:
                 page_timeout=int(settings.get("CRAWL_PAGE_TIMEOUT", "45000")),
                 delay_before_return_html=float(settings.get("CRAWL_DELAY_BEFORE_HTML", "0.5")),
                 scan_full_page=True,
+                # Content filtering to remove boilerplate
+                excluded_tags=EXCLUDED_TAGS,
+                word_count_threshold=WORD_COUNT_THRESHOLD,
             )
 
         dispatcher = MemoryAdaptiveDispatcher(

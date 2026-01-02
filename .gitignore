@@ -16,3 +16,5 @@ UAT/
 
 # Local release notes testing
 release-notes-*.md
+# Ignore Windows device-named file created elsewhere
+nul

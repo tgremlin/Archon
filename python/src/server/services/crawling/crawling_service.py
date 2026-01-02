@@ -233,6 +233,9 @@ class CrawlingService:
         max_depth: int = 3,
         max_concurrent: int | None = None,
         progress_callback: Callable[[str, int, str], Awaitable[None]] | None = None,
+        exclude_url_patterns: list[str] | None = None,
+        strict_domain: bool = True,
+        excluded_tags: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Recursively crawl internal links from start URLs."""
         return await self.recursive_strategy.crawl_recursive_with_progress(
@@ -243,6 +246,9 @@ class CrawlingService:
             max_concurrent,
             progress_callback,
             self._check_cancellation,  # Pass cancellation check
+            exclude_url_patterns=exclude_url_patterns,
+            strict_domain=strict_domain,
+            excluded_tags=excluded_tags,
         )
 
     # Orchestration methods
@@ -781,11 +787,19 @@ class CrawlingService:
             # Let the strategy handle concurrency from settings
             # This will use CRAWL_MAX_CONCURRENT from database (default: 10)
 
+            # Extract filtering parameters from request
+            exclude_url_patterns = request.get("exclude_url_patterns", [])
+            strict_domain = request.get("strict_domain", True)
+            excluded_tags = request.get("excluded_tags", [])
+
             crawl_results = await self.crawl_recursive_with_progress(
                 [url],
                 max_depth=max_depth,
                 max_concurrent=None,  # Let strategy use settings
                 progress_callback=await self._create_crawl_progress_callback("crawling"),
+                exclude_url_patterns=exclude_url_patterns,
+                strict_domain=strict_domain,
+                excluded_tags=excluded_tags,
             )
 
         return crawl_results, crawl_type

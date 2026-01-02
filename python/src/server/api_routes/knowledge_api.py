@@ -16,7 +16,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # Basic validation - simplified inline version
 
@@ -147,10 +147,14 @@ async def _validate_provider_api_key(provider: str = None) -> None:
 class KnowledgeItemRequest(BaseModel):
     url: str
     knowledge_type: str = "technical"
-    tags: list[str] = []
+    tags: list[str] = Field(default_factory=list)
     update_frequency: int = 7
     max_depth: int = 2  # Maximum crawl depth (1-5)
     extract_code_examples: bool = True  # Whether to extract code examples
+    # Filtering parameters for enhanced crawl control
+    exclude_url_patterns: list[str] = Field(default_factory=list)  # Additional URL patterns to exclude (regex)
+    strict_domain: bool = True  # Restrict crawling to exact domain (no subdomains)
+    excluded_tags: list[str] = Field(default_factory=list)  # Additional HTML tags to exclude from content
 
     class Config:
         schema_extra = {
@@ -161,6 +165,9 @@ class KnowledgeItemRequest(BaseModel):
                 "update_frequency": 7,
                 "max_depth": 2,
                 "extract_code_examples": True,
+                "exclude_url_patterns": ["/blog/", "/changelog/"],
+                "strict_domain": True,
+                "excluded_tags": ["advertisement"],
             }
         }
 
@@ -840,6 +847,10 @@ async def _perform_crawl_with_progress(
                 "max_depth": request.max_depth,
                 "extract_code_examples": request.extract_code_examples,
                 "generate_summary": True,
+                # Filtering parameters
+                "exclude_url_patterns": request.exclude_url_patterns or [],
+                "strict_domain": request.strict_domain,
+                "excluded_tags": request.excluded_tags or [],
             }
 
             # Orchestrate the crawl - this returns immediately with task info including the actual task

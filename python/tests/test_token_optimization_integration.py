@@ -9,6 +9,8 @@ import asyncio
 import pytest
 from typing import Dict, Any, Tuple
 
+pytestmark = pytest.mark.asyncio
+
 
 async def measure_response_size(url: str, params: dict[str, Any] | None = None) -> tuple[int, float]:
     """Measure response size and estimate token count."""

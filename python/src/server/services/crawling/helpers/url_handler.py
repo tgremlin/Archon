@@ -521,6 +521,25 @@ class URLHandler:
                         filename = path.split("/")[-1] if "/" in path else path
                         return f"{base_name} - {filename.title()}"
 
+                    # Include meaningful path segments for differentiation
+                    # Filter out common non-meaningful segments
+                    filter_segments = {"docs", "doc", "documentation", "en", "latest", "stable", "v1", "v2", "v3"}
+
+                    def is_version_segment(segment: str) -> bool:
+                        """Check if a segment is a version number (e.g., '3', '3.12', '2.0')."""
+                        s = segment.lower().lstrip("v")
+                        # Matches patterns like: 3, 3.12, 2.0.1, etc.
+                        return bool(re.match(r"^\d+(\.\d+)*$", s))
+
+                    path_parts = [
+                        p for p in path.split("/")
+                        if p and p.lower() not in filter_segments and not is_version_segment(p)
+                    ]
+                    if path_parts:
+                        # Use first meaningful segment for differentiation
+                        meaningful_segment = path_parts[0].replace("-", " ").replace("_", " ").title()
+                        return f"{base_name} - {meaningful_segment}"
+
                 return f"{base_name} Documentation" if service_name else "Documentation"
 
             # Handle readthedocs.io subdomains

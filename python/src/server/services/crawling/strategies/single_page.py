@@ -14,6 +14,12 @@ from ....config.logfire_config import get_logger
 
 logger = get_logger(__name__)
 
+# HTML tags to exclude from crawled content (boilerplate)
+EXCLUDED_TAGS = ['nav', 'footer', 'header', 'aside', 'form', 'script', 'style', 'noscript']
+
+# Minimum word count per content block
+WORD_COUNT_THRESHOLD = 15
+
 
 class SinglePageCrawlStrategy:
     """Strategy for crawling a single web page."""
@@ -120,7 +126,11 @@ class SinglePageCrawlStrategy:
                         # Still remove popups
                         remove_overlay_elements=True,
                         # Process iframes for complete content
-                        process_iframes=True
+                        process_iframes=True,
+                        # Content filtering to remove boilerplate
+                        excluded_tags=EXCLUDED_TAGS,
+                        word_count_threshold=WORD_COUNT_THRESHOLD,
+                        exclude_external_links=True,
                     )
                 else:
                     # Configuration for regular sites
@@ -131,7 +141,10 @@ class SinglePageCrawlStrategy:
                         wait_until='domcontentloaded',  # Use domcontentloaded for better reliability
                         page_timeout=45000,  # 45 seconds timeout
                         delay_before_return_html=0.3,  # Reduced from 1.0s
-                        scan_full_page=True  # Trigger lazy loading
+                        scan_full_page=True,  # Trigger lazy loading
+                        # Content filtering to remove boilerplate
+                        excluded_tags=EXCLUDED_TAGS,
+                        word_count_threshold=WORD_COUNT_THRESHOLD,
                     )
 
                 logger.info(f"Crawling {url} (attempt {attempt + 1}/{retry_count})")

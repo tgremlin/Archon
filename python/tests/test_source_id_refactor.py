@@ -234,9 +234,26 @@ class TestDisplayNameExtraction:
             
             # Regular .txt files on docs sites
             ("https://docs.example.com/readme.txt", "Example - Readme.Txt"),
-            
-            # Non-special files should not get special treatment
-            ("https://docs.example.com/guide", "Example Documentation"),
+
+            # docs.* sites with paths now include meaningful segments for differentiation
+            ("https://docs.example.com/guide", "Example - Guide"),
+            ("https://docs.example.com/api-reference", "Example - Api Reference"),
+            ("https://docs.example.com/api-reference/endpoints", "Example - Api Reference"),
+            ("https://docs.example.com/en/guides/setup", "Example - Guides"),  # 'en' filtered out
+            ("https://docs.example.com/latest/intro", "Example - Intro"),  # 'latest' filtered out
+            ("https://docs.example.com/docs/getting-started", "Example - Getting Started"),  # 'docs' filtered out
+
+            # docs.* with no meaningful path still gets "Documentation"
+            ("https://docs.example.com/", "Example Documentation"),
+            ("https://docs.example.com/en/", "Example Documentation"),  # Only filtered segments
+
+            # Version numbers in path are filtered out
+            ("https://docs.python.org/3/", "Python Documentation"),  # Numeric version
+            ("https://docs.python.org/3.12/", "Python Documentation"),  # Semantic version
+            ("https://docs.example.com/v2.0/guide", "Example - Guide"),  # Version prefix filtered
+            ("https://docs.example.com/3/library/asyncio", "Example - Library"),  # Version filtered, meaningful kept
+
+            # Non-docs sites
             ("https://example.com/page.html", "Example - Page.Html"),  # Path gets added for single file
         ]
         

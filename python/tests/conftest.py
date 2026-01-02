@@ -1,6 +1,9 @@
 """Simple test configuration for Archon - Essential tests only."""
 
+import importlib
 import os
+import sys
+import types
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,6 +35,75 @@ mock_client.table.return_value = mock_table
 
 # Apply global patches immediately
 from unittest.mock import patch
+sys.modules.setdefault("psutil", MagicMock())
+if "crawl4ai" not in sys.modules:
+    crawl4ai_stub = types.ModuleType("crawl4ai")
+    crawl4ai_stub.__path__ = []
+    class _CacheMode:
+        BYPASS = "BYPASS"
+        ENABLED = "ENABLED"
+    class _AsyncWebCrawler:
+        def __init__(self, *args, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+    class _BrowserConfig:
+        def __init__(self, *args, **kwargs):
+            pass
+    class _CrawlerRunConfig:
+        def __init__(self, *args, **kwargs):
+            pass
+    class _MemoryAdaptiveDispatcher:
+        def __init__(self, *args, **kwargs):
+            pass
+    crawl4ai_stub.CacheMode = _CacheMode
+    crawl4ai_stub.AsyncWebCrawler = _AsyncWebCrawler
+    crawl4ai_stub.BrowserConfig = _BrowserConfig
+    crawl4ai_stub.CrawlerRunConfig = _CrawlerRunConfig
+    crawl4ai_stub.MemoryAdaptiveDispatcher = _MemoryAdaptiveDispatcher
+    sys.modules["crawl4ai"] = crawl4ai_stub
+    markdown_stub = types.ModuleType("crawl4ai.markdown_generation_strategy")
+    class _DefaultMarkdownGenerator:
+        def __init__(self, *args, **kwargs):
+            pass
+    markdown_stub.DefaultMarkdownGenerator = _DefaultMarkdownGenerator
+    sys.modules["crawl4ai.markdown_generation_strategy"] = markdown_stub
+    content_filter_stub = types.ModuleType("crawl4ai.content_filter_strategy")
+    class _PruningContentFilter:
+        def __init__(self, *args, **kwargs):
+            pass
+    content_filter_stub.PruningContentFilter = _PruningContentFilter
+    sys.modules["crawl4ai.content_filter_strategy"] = content_filter_stub
+if "jose" not in sys.modules:
+    jose_stub = types.ModuleType("jose")
+    class _JWT:
+        def encode(self, payload, key, algorithm=None):
+            return f"stub.{payload.get('role', 'unknown')}.token"
+        def decode(self, token, key, options=None):
+            parts = token.split(".")
+            if len(parts) < 3:
+                raise ValueError("Invalid token format")
+            role = parts[1] if len(parts) > 1 else "unknown"
+            if role == "invalid":
+                raise ValueError("Invalid token")
+            return {"role": role}
+    jose_stub.jwt = _JWT()
+    sys.modules["jose"] = jose_stub
+if "docker" not in sys.modules:
+    docker_stub = types.ModuleType("docker")
+    docker_stub.__path__ = []
+    def _from_env(*args, **kwargs):
+        return MagicMock()
+    docker_stub.from_env = _from_env
+    errors_stub = types.ModuleType("docker.errors")
+    class _NotFound(Exception):
+        pass
+    errors_stub.NotFound = _NotFound
+    sys.modules["docker"] = docker_stub
+    sys.modules["docker.errors"] = errors_stub
+importlib.import_module("src.server.utils")
 _global_patches = [
     patch("supabase.create_client", return_value=mock_client),
     patch("src.server.services.client_manager.get_supabase_client", return_value=mock_client),
