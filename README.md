@@ -20,6 +20,10 @@
 
 ---
 
+> **🔱 Fork Notice**: This is a fork of [coleam00/archon](https://github.com/coleam00/archon) with custom enhancements. See [Fork Customizations](#fork-customizations) below.
+
+---
+
 ## 🎯 What is Archon?
 
 > Archon is currently in beta! Expect things to not work 100%, and please feel free to share any feedback and contribute with fixes/new features! Thank you to everyone for all the excitement we have for Archon already, as well as the bug reports, PRs, and discussions. It's a lot for our small team to get through but we're committed to addressing everything and making Archon into the best tool it possibly can be!
@@ -508,8 +512,33 @@ docker system prune -f
   </a>
 </p>
 
+## 🔱 Fork Customizations
+
+This fork includes the following enhancements over upstream:
+
+### Enhanced Crawling
+- **URL Exclusion Patterns**: Automatically filters non-documentation pages (careers, pricing, login, blog, legal, etc.)
+- **Content Filtering**: Excludes boilerplate HTML tags and enforces minimum word count thresholds
+- **Performance**: Compiled regex patterns for faster URL matching
+
+### Additional Tools
+- **Recrawl Scripts**: Utility scripts in `scripts/` for re-crawling knowledge base sources
+- **Claude Commands**: Additional commands for documentation analysis
+
+### Infrastructure
+- **Line Ending Normalization**: `.gitattributes` configured for consistent LF endings across platforms
+
+### Syncing with Upstream
+See [UPSTREAM_SYNC.md](UPSTREAM_SYNC.md) for instructions on keeping this fork updated with the original Archon repository.
+
+---
+
 ## 📄 License
 
 Archon Community License (ACL) v1.2 - see [LICENSE](LICENSE) file for details.
 
 **TL;DR**: Archon is free, open, and hackable. Run it, fork it, share it - just don't sell it as-a-service without permission.
+
+### Attribution
+
+This project is a fork of [Archon](https://github.com/coleam00/archon) by Cole Medin and contributors.
